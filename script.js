@@ -8,6 +8,28 @@
       (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
   }
 
+  // ... di bawah function generateUUID() ...
+
+  // ─── ADDED HELPER FUNCTIONS ───
+  function extractYouTubeVideoId(url) {
+    if (!url) return null;
+    // Handle standard URL, short URL, and Piped/Invidious URLs
+    const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[7].length === 11) ? match[7] : null;
+  }
+
+  function validateYouTubeUrl(url) {
+    const id = extractYouTubeVideoId(url);
+    if (id) {
+      return { isValid: true, videoId: id, error: null };
+    }
+    return { isValid: false, videoId: null, error: 'URL YouTube tidak valid' };
+  }
+  // ──────────────────────────────
+
+// ... lanjutkan ke function getStorage() ...
+
   function getStorage() {
     try {
       const raw = localStorage.getItem('flowforge_v1');
@@ -209,38 +231,56 @@
     // Set Volume
     pipedAudio.volume = Math.max(0, Math.min(100, volume)) / 100;
 
-    // 1. Resume jika ID sama dan URL valid
-    if (window.currentPipedId === videoId && pipedAudio.src && pipedAudio.paused) {
-        try {
-            await pipedAudio.play();
-            return true;
-        } catch (e) { console.warn("Resume failed, reloading...", e); }
+    // Cek apakah PipedService sudah terload
+    if (typeof PipedService === 'undefined') {
+        console.error("PipedService module missing!");
+        alert("Modul Audio belum siap. Refresh halaman.");
+        return false;
     }
 
-    // 2. Load Baru
     try {
-        // Tampilkan loading state di cursor/UI (opsional)
+        // Logic: Jika ID sama, PAUSED, dan SRC valid -> Resume
+        // TAPI: YouTube stream URL cepat expired.
+        // Best practice: Fetch ulang jika sudah dipause lama atau error.
+        
+        const isSameVideo = window.currentPipedId === videoId;
+        
+        if (isSameVideo && pipedAudio.src && !isNaN(pipedAudio.duration)) {
+             if (pipedAudio.paused) {
+                await pipedAudio.play();
+                return true;
+             }
+             return true; // Sudah playing
+        }
+
+        // Fetch Fresh URL
         document.body.style.cursor = 'wait';
+        
+        // Matikan audio sebelumnya
+        pipedAudio.pause();
         
         const streamData = await PipedService.getStreamUrl(videoId);
         
         document.body.style.cursor = 'default';
 
-        if (!streamData || !streamData.url) throw new Error("Stream URL not found");
+        if (!streamData || !streamData.url) throw new Error("Gagal mengambil stream audio");
 
-        // Simpan ID saat ini
+        // Simpan ID & Update SRC
         window.currentPipedId = videoId;
-
-        // Load src
         pipedAudio.src = streamData.url;
-        pipedAudio.load(); // Penting: Reset buffer
         
-        // Play
+        // Penting untuk iOS/Safari: Load eksplisit
+        pipedAudio.load(); 
+        
         await pipedAudio.play();
         return true;
+
     } catch (error) {
         document.body.style.cursor = 'default';
-        console.error("Piped Playback Failed:", error);
+        console.error("Playback Failed:", error);
+        
+        // Reset state
+        window.currentPipedId = null;
         return false;
     }
   }
@@ -428,12 +468,12 @@
         if (!Array.isArray(this.prefs.audio.youtube.savedLinks)) {
           this.prefs.audio.youtube.savedLinks = [];
         }
-
         // Ensure all saved links have required fields (Data Migration)
         this.prefs.audio.youtube.savedLinks = this.prefs.audio.youtube.savedLinks.map(link => ({
           id: link.id,
           title: link.title || 'YouTube Video',
-          url: link.url || `https://www.youtube.com/watch?v=${link.id}`,
+          // Hapus dependensi URL stream fisik di storage, cukup ID saja yang persisten
+          url: `https://www.youtube.com/watch?v=${link.id}`, 
           thumbnail: link.thumbnail || `https://i.ytimg.com/vi/${link.id}/mqdefault.jpg`,
           duration: link.duration || null,
           addedAt: link.addedAt || new Date().toISOString(),
@@ -909,12 +949,14 @@
       },
 
       // ─── YOUTUBE AUDIO ───────────────
+      // Menggunakan helper global yang sudah kita definisikan di atas
       extractYouTubeVideoId(url) {
-        return extractYouTubeVideoId(url);
+        return window.extractYouTubeVideoId(url) || extractYouTubeVideoId(url);
       },
 
       validateYouTubeUrl(url) {
-        const result = validateYouTubeUrl(url);
+        // Panggil helper global
+        const result = validateYouTubeUrl(url); 
         if (!result.isValid) {
           this.youtubePlayer.error = result.error;
           this.showToast(result.error, 'error', '⚠');
