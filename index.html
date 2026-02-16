@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Time Ear</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Nunito:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- html2canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <script src="js/piped-service.js"></script>
+
+</head>
+
+<body>
+<div id="app" x-data="flowForge()" x-init="init()" :data-theme="prefs.theme" :data-typography="prefs.typography" :data-motion="prefs.motion">
+
+  <!-- ═══════════════════════════════
+       SCREENS
+  ═══════════════════════════════ -->
+  <div class="screens">
+
+    <!-- ─── SCREEN A: IGNITION ─── -->
+     <div id="screen-ignition" class="screen"
+     :class="{ 'active': activeScreen === 'ignition' }"
+     x-show="activeScreen === 'ignition'"
+     x-transition:enter="transition-std"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100">
+
+      <div class="ignition-logo">
+        <span class="logo-mark">Neurodivergent Optimized</span>
+        <div class="logo-title">TIME EAR</div>
+      </div>
+
+      <!-- Post-lock: Mission card -->
+      <div class="mission-card w-full" x-show="currentMission && lockedState === 'locked'" x-cloak>
+        <span class="mission-card__icon"></span>
+        <h2 class="mission-card__text" x-text="currentMission?.text"></h2>
+        <div class="mission-card__meta">
+          <span class="caption">
+            📅 <span x-text="formatDate(currentMission?.createdAt)"></span>
+          </span>
+          <span class="caption">
+            ⏱ <span x-text="formatTime(currentMission?.createdAt)"></span>
+          </span>
+        </div>
+        <div class="mission-card__actions">
+          <button class="btn btn-primary flex-1" @click="goToScreen('cockpit')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+            Mulai Sesi
+          </button>
+          <button class="btn btn-secondary" @click="resetMission()" title="Ubah misi">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pre-lock: Input state -->
+      <div class="w-full" x-show="lockedState !== 'locked'" x-cloak>
+    
+    <div class="mode-switcher">
+          <div class="mode-btn" 
+               :class="{ 'active': sessionMode === 'open' }"
+               @click="sessionMode = 'open'">
+            ⏱ Pencatatan (Open)
+          </div>
+          <div class="mode-btn" 
+               :class="{ 'active': sessionMode === 'target' }"
+               @click="sessionMode = 'target'">
+            ⏳ Target Waktu
+          </div>
+        </div>
+
+        <div class="time-presets" x-show="sessionMode === 'target'" x-transition>
+           <template x-for="m in [15, 25, 45, 60]" :key="m">
+             <button class="time-chip" 
+                     :class="{ 'active': targetMinutes === m }" 
+                     @click="targetMinutes = m">
+               <span x-text="m"></span>
+             </button>
+           </template>
+           <div class="time-chip" :class="{ 'active': ![15, 25, 45, 60].includes(targetMinutes) }" style="padding: 0 8px; display: flex; align-items: center;">
+              <input type="number" x-model.number="targetMinutes" 
+                     style="width: 40px; background: transparent; border: none; color: inherit; font-weight: bold; text-align: center; outline: none;" 
+                     min="1" max="999">
+              <span style="font-size: 10px; margin-left: 2px;">min</span>
+           </div>
+        </div>
+    
+        <p class="ignition-prompt">Apa yang ingin kamu selesaikan hari ini?</p>
+
+        <div class="input-wrapper" style="margin-bottom: var(--space-md);">
+          <input
+            class="input"
+            type="text"
+            maxlength="120"
+            autocomplete="off"
+            autocapitalize="sentences"
+            aria-label="Mission input"
+            aria-describedby="mission-hint"
+            x-model="missionInput"
+            x-ref="missionInput"
+            @keydown.enter="missionInput.trim().length >= 3 && lockMission()"
+            placeholder="Tulis tujuan utamamu…"
+            style="height: 72px;"
+          />
+        </div>
+
+        <button
+          class="btn btn-primary btn-xl btn-full"
+          :class="{ 'pulse-btn': missionInput.trim().length >= 3, 'btn-loading': lockedState === 'locking' }"
+          :disabled="missionInput.trim().length < 3 || lockedState === 'locking'"
+          :aria-disabled="missionInput.trim().length < 3"
+          @click="lockMission()"
+        >
+          <template x-if="lockedState === 'locking'">
+            <div class="spinner"></div>
+          </template>
+          <template x-if="lockedState !== 'locking'">
+            <span></span>
+          </template>
+          <span x-text="lockedState === 'locking' ? 'Mengunci...' : 'KUNCI TARGET'"></span>
+        </button>
+      </div>
+
+      <!-- Suggestions -->
+      <div class="suggestions" x-show="lockedState !== 'locked'" x-cloak>
+        <template x-for="s in suggestions" :key="s">
+          <button class="suggestion-chip" @click="missionInput = s" x-text="s"></button>
+        </template>
+      </div>
+
+      <!-- hint for screen reader -->
+      <div id="mission-hint" class="sr-only">Tulis tujuan yang ingin diselesaikan hari ini, minimal 3 karakter</div>
+    </div>
+
+    <!-- ─── SCREEN B: FLOW COCKPIT ─── -->
+    <div id="screen-cockpit" class="screen"
+     :class="{ 'active': activeScreen === 'cockpit', 'victory-mode': session.isFinished }"
+     x-show="activeScreen === 'cockpit'"
+     x-transition:enter="transition-std"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100">
+
+      <!-- Header -->
+      <div class="cockpit-header w-full">
+        <button class="btn btn-ghost btn-icon" @click="goToScreen('ignition')" aria-label="Kembali">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon" @click="openSettings()" aria-label="Pengaturan">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+
+      <!-- Mission label -->
+      <div class="cockpit-mission-label w-full">
+        <div class="cockpit-mission-text">
+          <span x-text="currentMission ? currentMission.text : 'Belum ada misi'"></span>
+        </div>
+      </div>
+
+      <!-- Timer -->
+      <div class="timer-container" 
+           :class="{ 'timer-active': session.isActive && !session.isPaused, 'timer-paused': session.isPaused, 'victory': session.isFinished }" 
+           role="timer" 
+           :aria-label="'Waktu berjalan: ' + formatElapsed(session.elapsedSeconds)">
+       
+        <svg class="timer-svg" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="timer-bg-circle" cx="110" cy="110" r="95"/>
+          <circle class="timer-progress-circle" cx="110" cy="110" r="95"
+            :style="`stroke-dasharray: ${2 * Math.PI * 95}; stroke-dashoffset: ${getTimerOffset()}`"
+          />
+        </svg>
+        <div class="timer-center">
+          <div class="timer-elapsed mono" 
+               x-text="sessionMode === 'target' 
+               ? formatElapsed(Math.max(0, (targetMinutes * 60) - session.elapsedSeconds)) 
+               : formatElapsed(session.elapsedSeconds)">
+          </div>
+          
+          <div class="timer-label-text">
+             <span x-show="session.isPaused">PAUSED</span>
+             <span x-show="!session.isPaused && sessionMode === 'open'">FOKUS (OPEN)</span>
+             <span x-show="!session.isPaused && sessionMode === 'target'">
+                FOKUS (<span x-text="targetMinutes + 'm'"></span>)
+             </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start/Stop Button -->
+      <div class="cockpit-controls-wrapper">
+        
+        <div class="cockpit-controls-wrapper">
+        
+        <div class="md3-stats-row" x-show="!session.isFinished">
+          <div class="md3-stat-pill">
+            <span class="md3-stat-label">XP Gained</span>
+            <span class="md3-stat-value tertiary" x-text="'+' + calculateXP(session.elapsedSeconds)"></span>
+          </div>
+          <div class="md3-stat-pill">
+            <span class="md3-stat-label">Focus State</span>
+            <span class="md3-stat-value primary" style="font-size: 14px;" x-text="getFocusLevel(Math.floor(session.elapsedSeconds/60))"></span>
+          </div>
+        </div>
+
+        <div class="md3-media-card" 
+             :class="{ 'active': session.isActive && !session.isPaused && prefs.audio.enabled }"
+             x-show="!session.isFinished">
+          
+          <div class="media-header-row">
+            
+            <div class="mini-wave-box" @click="toggleAudio()">
+               <div class="wave-bar-mini"></div>
+               <div class="wave-bar-mini"></div>
+               <div class="wave-bar-mini"></div>
+               <div class="wave-bar-mini"></div>
+            </div>
+
+            <div class="media-info">
+               <div class="media-title-large">
+                 <div class="marquee-wrapper">
+                    <span x-text="getAudioTitle()" style="margin-right: 48px;"></span>
+                    <span x-text="getAudioTitle()" style="opacity: 0.5;"></span> </div>
+               </div>
+               <div class="media-subtitle">
+                 <span x-show="session.isActive && !session.isPaused">Sedang memutar audio...</span>
+                 <span x-show="session.isPaused">Audio dijeda</span>
+                 <span x-show="!session.isActive">Siap memutar</span>
+               </div>
+            </div>
+          </div>
+
+          
+        </div>
+
+        <div class="md3-actions-row" x-show="!session.isFinished">
+            
+            <button class="btn btn-fab-large btn-fab-primary" @click="session.isActive ? (session.isPaused ? resumeSession() : pauseSession()) : startSession()">
+               <span x-show="!session.isActive">▶ MULAI</span>
+               <span x-show="session.isActive && !session.isPaused">⏸ PAUSE</span>
+               <span x-show="session.isActive && session.isPaused">▶ LANJUT</span>
+            </button>
+
+            <button class="btn btn-fab-large btn-fab-danger" @click="stopSession()" x-show="session.isActive" title="Selesaikan Sesi">
+               ■
+            </button>
+        </div>
+
+        <div class="victory-panel" x-show="session.isFinished" x-cloak>
+             <div class="victory-title">Session Complete</div>
+             <div class="victory-stats-row">
+                <div class="v-stat">
+                    <span class="v-stat-val tertiary" x-text="'+' + lastReceipt.xp"></span>
+                    <span class="v-stat-label">XP Gained</span>
+                </div>
+                <div class="v-stat">
+                    <span class="v-stat-val primary" x-text="lastReceipt.durationMin + 'm'"></span>
+                    <span class="v-stat-label">Focus Time</span>
+                </div>
+             </div>
+             <div class="flex-row gap-sm">
+                <button class="btn btn-primary flex-1" @click="completeAndReset()">Next Mission ➔</button>
+             </div>
+        </div>
+
+      </div>
+      </div>
+    
+    </div>
+
+    <!-- ─── SCREEN C: BENTO GRID ─── -->
+
+    <div id="screen-bento" class="screen"
+         :class="{ 'active': activeScreen === 'bento' }"
+         x-show="activeScreen === 'bento'"
+         x-transition:enter="transition-std"
+         style="padding: 0; overflow: hidden;">
+
+      <div class="bento-toolbar">
+         <button class="btn btn-ghost btn-icon" @click="toggleLinkMode()" :class="{'active': isLinkMode}" style="color: var(--color-on-surface-muted);" title="Mode Sambung">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+         </button>
+
+         <div class="divider" style="width: 1px; height: 24px; margin: 0 4px; background: var(--color-border);"></div>
+
+         <div style="flex: 1; display: flex; flex-direction: column;">
+            <div class="flex-row gap-sm" style="padding: 0 8px 4px; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                <template x-for="cat in uniqueCategories" :key="cat">
+                    <button class="node-tag" 
+                            @click="addTagToInput(cat)" 
+                            x-text="'#' + cat" 
+                            style="border: none; cursor: pointer; flex-shrink: 0;"></button>
+                </template>
+            </div>
+            <div class="bento-composer" style="width: 100%;">
+                <input class="composer-input" type="text" x-model="taskInput" 
+                       @keydown.enter="addNode()" 
+                       x-ref="bentoInput"
+                       placeholder="Tulis ide baru... (#Tag untuk grup)" 
+                       style="font-size: 15px;">
+            </div>
+         </div>
+         
+         <button class="btn btn-primary btn-icon" style="width: 36px; height: 36px; border-radius: 50%;" @click="addNode()">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+         </button>
+      </div>
+
+      <div class="bento-canvas-wrapper" 
+           @mousedown="startPan($event)" 
+           @mousemove="handleCanvasMove($event)" 
+           @mouseup="endDrag()"
+           @mouseleave="endDrag()"
+           x-ref="canvas">
+           
+           <svg class="connections-layer">
+              <template x-for="task in activeTasks" :key="'conn-' + task.id">
+                 <path x-show="task.parentId && isLinkMode"
+                       :d="getCurvePath(task.parentId, task.x, task.y)"
+                       fill="none"
+                       stroke="var(--color-border)"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       style="opacity: 0.5;"
+                 />
+              </template>
+              
+              <line x-show="linkingState.sourceId"
+                    :x1="getNodeX(linkingState.sourceId)"
+                    :y1="getNodeY(linkingState.sourceId)"
+                    :x2="linkingState.mouseX"
+                    :y2="linkingState.mouseY"
+                    stroke="var(--color-primary)"
+                    stroke-width="2"
+                    stroke-dasharray="5,5"
+                    style="opacity: 0.8;"
+              />
+           </svg>
+
+           <div class="mind-node is-sun"
+                :style="`left: ${pan.x + (window.innerWidth/2)}px; top: ${pan.y + (window.innerHeight/2)}px`"
+                @click="goToScreen('cockpit')"
+                title="Klik untuk kembali ke Timer">
+                <div class="node-tag">CURRENT MISSION</div>
+                <div class="node-text" x-text="currentMission ? currentMission.text : 'Belum ada misi'"></div>
+           </div>
+
+           <template x-for="task in activeTasks" :key="task.id">
+              <div class="mind-node"
+                   :class="{ 
+                      'dragging': dragData.targetId === task.id, 
+                      'completed': task.completedAt,
+                      'link-mode-active': isLinkMode,
+                      'is-focus': task.id === focusTaskId
+                   }"
+                   :style="`left: ${task.x + pan.x}px; top: ${task.y + pan.y}px`"
+                   @mousedown.stop="startDragNode($event, task)"
+                   @click.stop="handleNodeClick(task)">
+                 
+                 <div class="node-header">
+                    <span class="node-tag" :style="`color: ${getCatColor(task.category)}`" x-text="'#'+task.category"></span>
+                    <button class="tile-action-btn delete" @click.stop="deleteTask(task.id)">×</button>
+                 </div>
+                 
+                 <div class="node-text" x-text="task.text"></div>
+                 
+                 <div class="node-actions" x-show="!isLinkMode">
+                    <button class="btn-ghost" style="font-size: 10px; padding: 2px 6px;" @click.stop="focusOnTask(task)">
+                       🚀 FOKUS
+                    </button>
+                    <button class="btn-ghost" style="font-size: 10px; padding: 2px 6px;" @click.stop="editTaskText(task)">
+                       ✎
+                    </button>
+                 </div>
+              </div>
+           </template>
+           
+      </div>
+    </div>
+
+  <!-- ═══════════════════════════════
+       BOTTOM NAVIGATION
+  ═══════════════════════════════ -->
+  <nav class="bottom-nav" role="navigation" aria-label="Navigasi utama">
+    <div class="nav-indicator"
+         :style="`left: ${navIndicatorLeft}%; width: 33.33%;`">
+    </div>
+
+    <button class="nav-btn" :class="{ active: activeScreen === 'ignition' }" @click="goToScreen('ignition')" aria-label="Ignition - Komitmen Misi">
+      <svg width="22" height="22" fill="none" stroke="currentColor" :stroke-width="activeScreen === 'ignition' ? '2.5' : '2'" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="16"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      <span>Ignition</span>
+    </button>
+
+    <button class="nav-btn" :class="{ active: activeScreen === 'cockpit' }" @click="goToScreen('cockpit')" aria-label="Flow - Timer Sesi">
+      <svg width="22" height="22" fill="none" stroke="currentColor" :stroke-width="activeScreen === 'cockpit' ? '2.5' : '2'" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12,6 12,12 16,14"/>
+      </svg>
+      <span>Flow</span>
+    </button>
+
+    <button class="nav-btn" :class="{ active: activeScreen === 'bento' }" @click="goToScreen('bento')" aria-label="Bento - Task Map">
+      <svg width="22" height="22" fill="none" stroke="currentColor" :stroke-width="activeScreen === 'bento' ? '2.5' : '2'" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="7" height="7"/>
+        <rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/>
+      </svg>
+      <span>Bento</span>
+    </button>
+  </nav>
+
+  <!-- ═══════════════════════════════
+       RECEIPT MODAL
+  ═══════════════════════════════ -->
+  <div class="modal-overlay" x-show="showReceiptModal" x-cloak @click.self="showReceiptModal = false" aria-modal="true" role="dialog" aria-label="Sesi selesai">
+    <div class="modal-sheet" x-show="showReceiptModal">
+      <div class="modal-handle"></div>
+
+      <div class="receipt-card" id="receipt-export-card">
+        <div class="receipt-title">✓ Mission Accomplished</div>
+        <div class="receipt-mission" x-text="lastReceipt.mission"></div>
+
+        <div class="receipt-stats">
+          <div class="receipt-stat">
+            <span class="receipt-stat__value mono" x-text="lastReceipt.durationMin + 'm'"></span>
+            <span class="receipt-stat__label">Durasi</span>
+          </div>
+          <div class="receipt-stat">
+            <span class="receipt-stat__value tertiary mono" x-text="'+' + lastReceipt.xp"></span>
+            <span class="receipt-stat__label">XP</span>
+          </div>
+          <div class="receipt-stat">
+            <span class="receipt-stat__value secondary mono" x-text="stats.totalSessions"></span>
+            <span class="receipt-stat__label">Total</span>
+          </div>
+        </div>
+
+        <div class="receipt-focus-badge">
+          <span x-text="getFocusEmoji(lastReceipt.focusLevel)"></span>
+          <span x-text="lastReceipt.focusLevel + ' FOCUS'"></span>
+        </div>
+
+        <div class="caption muted" x-text="formatDateTime(lastReceipt.endedAt)"></div>
+        <div class="receipt-watermark">TIME EAR</div>
+      </div>
+
+      <!-- Live regions for a11y -->
+      <div class="sr-only" aria-live="assertive" x-text="lastReceipt.ariaAnnounce"></div>
+
+      <div class="flex-row gap-sm" style="margin-bottom: var(--space-md);">
+        <button class="btn btn-secondary flex-1" @click="shareReceipt()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Share
+        </button>
+        <button class="btn btn-secondary flex-1" @click="downloadReceipt()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </button>
+      </div>
+
+      <button class="btn btn-primary btn-full" @click="showReceiptModal = false; resetAfterReceipt()">
+        🚀 Misi Berikutnya
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       SETTINGS MODAL
+  ═══════════════════════════════ -->
+  <div class="modal-overlay" x-show="showSettingsModal" x-cloak @click.self="showSettingsModal = false" aria-modal="true" role="dialog" aria-label="Pengaturan">
+    <div class="modal-sheet" x-show="showSettingsModal">
+      <div class="modal-handle"></div>
+      <h2 class="headline" style="margin-bottom: var(--space-lg);">⚙ Pengaturan</h2>
+
+      <!-- Theme -->
+      <div class="settings-section">
+        <div class="settings-section-title">🎨 Tema</div>
+        <div class="settings-option-group">
+          <template x-for="t in ['dark', 'light', 'cyberpunk']" :key="t">
+            <div class="settings-option" :class="{ active: prefs.theme === t }" @click="prefs.theme = t; savePrefs();">
+              <div class="radio-dot"></div>
+              <div>
+                <div class="settings-option__label" x-text="{ dark: '🌑 Dark', light: '☀️ Light', cyberpunk: '🌐 Cyberpunk' }[t]"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Typography -->
+      <div class="settings-section">
+        <div class="settings-section-title">✏ Tipografi</div>
+        <div class="settings-option-group">
+          <template x-for="t in ['minimalist', 'futurist', 'cozy']" :key="t">
+            <div class="settings-option" :class="{ active: prefs.typography === t }" @click="prefs.typography = t; savePrefs();">
+              <div class="radio-dot"></div>
+              <div>
+                <div class="settings-option__label" x-text="{ minimalist: '✦ Minimalist', futurist: '⬡ Futurist', cozy: '🌿 Cozy' }[t]"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Motion -->
+      <div class="settings-section">
+        <div class="settings-section-title">🎬 Animasi</div>
+        <div class="settings-option-group">
+          <template x-for="m in ['normal', 'reduced']" :key="m">
+            <div class="settings-option" :class="{ active: prefs.motion === m }" @click="prefs.motion = m; savePrefs();">
+              <div class="radio-dot"></div>
+              <div class="settings-option__label" x-text="m === 'normal' ? '✦ Normal' : '◇ Reduced'"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Audio -->
+      <div class="settings-section">
+        <div class="settings-section-title">🔊 Audio</div>
+        <div class="settings-slider-row">
+          <label class="audio-toggle" title="Toggle brown noise">
+            <input type="checkbox" x-model="prefs.audio.enabled" @change="toggleAudio(); savePrefs();" role="switch" :aria-checked="prefs.audio.enabled" aria-label="Aktifkan brown noise" />
+            <span class="toggle-track"></span>
+          </label>
+          <span class="body" style="flex:1;">Brown Noise</span>
+          <input type="range" class="volume-slider" min="0" max="100" x-model="prefs.audio.volume" @input="updateAudioVolume(); savePrefs();" :disabled="!prefs.audio.enabled" style="width: 100px;" />
+          <span class="caption mono" x-text="prefs.audio.volume + '%'" style="min-width: 36px;"></span>
+        </div>
+      </div>
+
+      <!-- Session goal -->
+      <div class="settings-section">
+        <div class="settings-section-title">⏱ Target Sesi</div>
+        <div class="settings-option-group">
+          <template x-for="m in [15, 25, 30, 45, 60]" :key="m">
+            <div class="settings-option" :class="{ active: prefs.sessionGoalMinutes === m }" @click="prefs.sessionGoalMinutes = m; savePrefs();">
+              <div class="radio-dot"></div>
+              <div class="settings-option__label" x-text="m + ' menit'"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" @click="showSettingsModal = false">Simpan & Tutup</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       YOUTUBE MODAL
+  ═══════════════════════════════ -->
+  <div class="modal-overlay" x-show="showYouTubeModal" x-cloak @click.self="showYouTubeModal = false" aria-modal="true" role="dialog" aria-label="YouTube Audio">
+    <div class="modal-sheet" x-show="showYouTubeModal">
+      <div class="modal-handle"></div>
+
+      <div class="settings-section-title" style="margin-bottom: var(--space-lg);">🎵 YouTube Audio</div>
+
+      <div class="settings-section">
+        <div class="settings-section-title" style="font-size: 13px; margin-bottom: var(--space-sm);">Cari Lagu (Piped API)</div>
+        <div style="display: flex; gap: var(--space-sm); margin-bottom: var(--space-md);">
+          <input
+            type="text"
+            class="input"
+            x-model="youtubeInput.query"
+            @keydown.enter="searchSong()"
+            placeholder="Ketik judul lagu / artis..."
+            style="flex: 1;"
+          />
+          <button 
+            class="btn btn-primary"
+            @click="searchSong()"
+            :disabled="youtubeInput.isSearching || !youtubeInput.query.trim()"
+          >
+            <span x-show="!youtubeInput.isSearching">Cari</span>
+            <span x-show="youtubeInput.isSearching">...</span>
+          </button>
+        </div>
+
+        <div class="search-results-container" x-show="youtubeInput.results && youtubeInput.results.length > 0">
+           <template x-for="item in youtubeInput.results" :key="item.url">
+              <div class="search-result-item" @click="addFromSearch(item)">
+                 <img :src="item.thumbnail" loading="lazy" class="result-thumb"/>
+                 <div class="result-info">
+                    <div class="result-title" x-text="item.title"></div>
+                    <div class="result-artist" x-text="item.uploaderName || 'Unknown'"></div>
+                 </div>
+                 <button class="btn-icon-small" title="Tambah">+</button>
+              </div>
+           </template>
+        </div>
+      </div>    
+
+
+      <!-- Saved Links Section -->
+      <div class="settings-section" x-show="prefs.audio.youtube?.savedLinks?.length > 0">
+        <div class="settings-section-title" style="font-size: 13px; margin-bottom: var(--space-sm);">Link Tersimpan</div>
+        <div class="youtube-links-list">
+          <template x-for="(link, index) in (prefs.audio.youtube?.savedLinks || [])" :key="link.id">
+            <div class="youtube-link-item" :class="{ 'is-active': prefs.audio.type === 'youtube' && youtubePlayer.currentVideoId === link.id }">
+              <div class="youtube-link-thumbnail" x-show="link.thumbnail">
+                <img :src="link.thumbnail" :alt="link.title" loading="lazy" />
+              </div>
+              <div class="youtube-link-info" style="flex: 1;">
+                <div class="youtube-link-title" x-text="link.title || 'YouTube Video'"></div>
+                <div class="caption muted" x-text="link.duration ? formatDuration(link.duration) : ''"></div>
+              </div>
+              <div class="youtube-link-actions">
+                <button 
+                  class="btn-icon-small"
+                  @click="playYouTubeVideo(link.id, link.title)"
+                  :title="prefs.audio.type === 'youtube' && youtubePlayer.currentVideoId === link.id && youtubePlayer.isPlaying ? 'Sedang diputar' : 'Putar'"
+                  :class="{ 'is-playing': prefs.audio.type === 'youtube' && youtubePlayer.currentVideoId === link.id && youtubePlayer.isPlaying }"
+                >
+                  <span x-show="prefs.audio.type !== 'youtube' || youtubePlayer.currentVideoId !== link.id || !youtubePlayer.isPlaying">▶</span>
+                  <span x-show="prefs.audio.type === 'youtube' && youtubePlayer.currentVideoId === link.id && youtubePlayer.isPlaying">⏸</span>
+                </button>
+                <button 
+                  class="btn-icon-small"
+                  @click="setDefaultYouTubeLink(link.id)"
+                  :title="prefs.audio.youtube?.defaultLinkId === link.id ? 'Default' : 'Set sebagai default'"
+                  :class="{ 'is-default': prefs.audio.youtube?.defaultLinkId === link.id }"
+                  x-show="prefs.audio.youtube?.savedLinks?.length > 1"
+                >
+                  <span x-show="prefs.audio.youtube?.defaultLinkId === link.id">⭐</span>
+                  <span x-show="prefs.audio.youtube?.defaultLinkId !== link.id">☆</span>
+                </button>
+                <button 
+                  class="btn-icon-small"
+                  @click="deleteYouTubeLink(link.id)"
+                  title="Hapus"
+                >
+                  🗑
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div x-show="!prefs.audio.youtube?.savedLinks || prefs.audio.youtube.savedLinks.length === 0" class="settings-section">
+        <div class="caption muted" style="text-align: center; padding: var(--space-xl);">
+          Belum ada link tersimpan.<br/>
+          Tambahkan link YouTube untuk mulai.
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" @click="showYouTubeModal = false">Tutup</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       TOAST CONTAINER
+  ═══════════════════════════════ -->
+  <div class="toast-container" aria-live="polite" aria-atomic="true">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="toast" :class="[toast.type, toast.leaving ? 'toast-out' : '']">
+        <span x-text="toast.icon"></span>
+        <span x-text="toast.message"></span>
+        <button x-show="toast.undoFn" class="toast-undo-btn" @click="toast.undoFn && toast.undoFn(); dismissToast(toast.id)">Undo</button>
+      </div>
+    </template>
+  </div>
+
+  <!-- Confetti container -->
+  <div class="confetti-container" id="confetti-container"></div>
+
+  <!-- Hidden YouTube Player Container -->
+  <div id="youtube-player-container" style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px;"></div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
